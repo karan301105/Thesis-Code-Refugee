@@ -1,0 +1,16 @@
+[
+  {
+    "email": "karangupta@gmail.com",
+    "password": "$2b$10$LrkkoxdEfvAbfk9B4y4lBOsXgMwYY7CS86n1PrhrE7qAA0cOTZBc.",
+    "clientId": "karan_3643e211-3e5e-4b35-8f1c-5aa3bd40bc04",
+    "clientSecret": {
+      "iv": "4683b149c3a8b674b2bba9f5",
+      "tag": "8a02b1b820e86c04e710609cba21baed",
+      "data": "b387bdc521430bdb3a1210e7fae279ce0df373a776de96c8aae877b0fbf7e5bdd32562df94c7160364f1b199c01f5b019de22ffdfed9c3a4b9ef6748c80c479db7b41a45b66bc79810cab8e2060b9191836ac78f2ac8dc63f9d59f54bb3184d568b23cc8cd159b089e9c1240db829fe9b68e890f867dfd53d34d5dd0ad44c4e0"
+    },
+    "oidcIssuer": "https://solidcommunity.net/",
+    "targetPod": "https://refugee-pod.solidcommunity.net/public/",
+    "firstName": "",
+    "lastName": ""
+  }
+]

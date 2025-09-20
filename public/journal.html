@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Journal Entry</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f0f2f5;
+        margin: 0;
+        padding: 2rem;
+        display: flex;
+        justify-content: center;
+      }
+      .container {
+        background: #fff;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        max-width: 650px;
+      }
+      h1 {
+        margin-top: 0;
+        color: #2c3e50;
+      }
+      .form-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        margin-bottom: 0.75rem;
+      }
+      input, select {
+        padding: 0.6rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+      }
+      fieldset {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      legend { font-weight: bold; }
+      .grid-people {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+      }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+      button {
+        padding: 0.6rem 1rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .btn-primary { background-color: #003366; color: #fff; }
+      .btn-secondary { background-color: #6b7280; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Journal Entry</h1>
+      <form id="journalEntryForm" autocomplete="off">
+        <!-- Date -->
+        <div class="form-row">
+          <label for="j-date">Date</label>
+          <input type="date" id="j-date" name="date" required />
+        </div>
+        <!-- Location -->
+        <div class="form-row">
+          <label for="j-location">Location</label>
+          <input type="text" id="j-location" name="location" placeholder="City / region / GPS" />
+        </div>
+        <!-- People -->
+        <fieldset>
+          <legend>People</legend>
+          <div class="grid-people">
+            <label>Males <input type="number" id="j-males" value="0" min="0"/></label>
+            <label>Females <input type="number" id="j-females" value="0" min="0"/></label>
+            <label>Kids <input type="number" id="j-kids" value="0" min="0"/></label>
+            <label>Total <input type="number" id="j-total" readonly /></label>
+          </div>
+        </fieldset>
+        <!-- Ransom -->
+        <div class="form-row">
+          <label>Ransom (amount)</label>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <input type="number" id="j-ransom" placeholder="0" min="0"/>
+            <label><input type="checkbox" id="j-ransom-unknown"/> Unknown</label>
+          </div>
+        </div>
+        <!-- Event Type -->
+        <div class="form-row">
+          <label for="j-event-type">Event type</label>
+          <select id="j-event-type" multiple size="6">
+            <option value="detention">Detention</option>
+            <option value="transfer">Transfer</option>
+            <option value="ransom_call">Ransom call</option>
+            <option value="injury">Injury</option>
+            <option value="checkpoint">Checkpoint</option>
+            <option value="disappearance">Disappearance</option>
+          </select>
+        </div>
+        <!-- Transport -->
+        <div class="form-row">
+          <label for="j-transport">Transport</label>
+          <select id="j-transport">
+            <option disabled selected>Select…</option>
+            <option>Foot</option>
+            <option>Van</option>
+            <option>Bus</option>
+            <option>Car</option>
+            <option>Boat</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <!-- Conditions -->
+        <fieldset>
+          <legend>Conditions</legend>
+          <label><input type="checkbox" value="no_food"/> No food</label>
+          <label><input type="checkbox" value="no_water"/> No water</label>
+          <label><input type="checkbox" value="medical_need"/> Medical need</label>
+        </fieldset>
+        <!-- Actions -->
+        <div class="actions">
+          <button type="submit" class="btn-primary">Save</button>
+          <button type="button" onclick="window.location.href='dashboard.html'" class="btn-secondary">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      const males = document.getElementById("j-males");
+      const females = document.getElementById("j-females");
+      const kids = document.getElementById("j-kids");
+      const total = document.getElementById("j-total");
+      const ransom = document.getElementById("j-ransom");
+      const ransomUnknown = document.getElementById("j-ransom-unknown");
+
+      function updateTotal() {
+        total.value = (+males.value||0) + (+females.value||0) + (+kids.value||0);
+      }
+      [males,females,kids].forEach(el=>el.addEventListener("input",updateTotal));
+      updateTotal();
+
+      ransomUnknown.addEventListener("change",()=>{
+        ransom.disabled = ransomUnknown.checked;
+        if(ransomUnknown.checked) ransom.value="";
+      });
+
+      document.getElementById("journalEntryForm").addEventListener("submit", e=>{
+        e.preventDefault();
+        const data = {
+          date: document.getElementById("j-date").value,
+          location: document.getElementById("j-location").value,
+          people: { males:+males.value||0, females:+females.value||0, kids:+kids.value||0, total:+total.value||0 },
+          ransom: ransomUnknown.checked? "unknown" : ransom.value||null,
+          eventTypes: Array.from(document.getElementById("j-event-type").selectedOptions).map(o=>o.value),
+          transport: document.getElementById("j-transport").value,
+          conditions: Array.from(document.querySelectorAll("fieldset input[type=checkbox]:checked")).map(c=>c.value)
+        };
+        console.log("Journal entry:",data);
+        alert("Journal entry saved (see console).");
+        e.target.reset();
+        updateTotal();
+        ransom.disabled=false;
+      });
+    </script>
+  </body>
+</html>

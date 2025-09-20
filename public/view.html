@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>View Document</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f2f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .viewer {
+      max-width: 90%;
+      width: 100%;
+      background: white;
+      padding: 1.5em;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    h2 {
+      color: #1d3557;
+      margin-top: 0;
+    }
+
+    .info {
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 1.5em;
+    }
+
+    .secure-image {
+      width: 100%;
+      height: 80vh;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      background-color: white;
+      border-radius: 5px;
+      user-select: none;
+    }
+
+    iframe {
+      width: 100%;
+      height: 80vh;
+      border: none;
+      border-radius: 5px;
+    }
+  </style>
+
+  <!-- Block context menu globally -->
+  <script>
+    document.addEventListener("contextmenu", (e) => e.preventDefault());
+  </script>
+</head>
+<body>
+  <div class="viewer">
+    <h2>Secure Viewer</h2>
+    <div class="info">Right-click has been disabled to protect this content.</div>
+    <div id="content">Loading...</div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const fileParam = urlParams.get("file");
+    const container = document.getElementById("content");
+
+    if (!fileParam) {
+      container.innerHTML = "<p>❌ No file specified.</p>";
+    } else {
+      const viewURL = `/view?file=${encodeURIComponent(fileParam)}`;
+
+      if (fileParam.endsWith(".pdf.enc")) {
+        const iframe = document.createElement("iframe");
+        iframe.src = viewURL;
+        container.innerHTML = "";
+        container.appendChild(iframe);
+      } else {
+        const secureDiv = document.createElement("div");
+        secureDiv.className = "secure-image";
+        secureDiv.style.backgroundImage = `url('${viewURL}')`;
+
+        container.innerHTML = "";
+        container.appendChild(secureDiv);
+      }
+    }
+  </script>
+</body>
+</html>

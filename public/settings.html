@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <title>Account Settings</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <style>
+            body {
+                font-family: "Segoe UI", sans-serif;
+                margin: 0;
+                padding: 0;
+                background: #f0f2f5;
+            }
+
+            .container {
+                max-width: 500px;
+                margin: 2em auto;
+                background: white;
+                padding: 2em;
+                border-radius: 10px;
+                box-shadow: 0 0 15px rgba(0, 0, 0, 0.05);
+            }
+
+            h2 {
+                margin-top: 0;
+                color: #1d3557;
+            }
+
+            input {
+                width: 100%;
+                padding: 0.75em;
+                margin-bottom: 1em;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                font-size: 1rem;
+            }
+
+            button {
+                width: 100%;
+                padding: 0.75em;
+                background: #457b9d;
+                color: white;
+                font-size: 1rem;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+
+            a {
+                display: inline-block;
+                margin-top: 1em;
+                text-decoration: none;
+                color: #2a9d8f;
+            }
+
+            .status {
+                font-size: 0.95rem;
+                margin-bottom: 1em;
+                color: #555;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Account Settings</h2>
+
+            <form id="settings-form">
+                <input type="text" name="firstName" placeholder="First Name" />
+                <input type="text" name="lastName" placeholder="Last Name" />
+                <input
+                    type="text"
+                    name="clientId"
+                    placeholder="Solid Client ID"
+                    required
+                />
+                <input
+                    type="text"
+                    name="clientSecret"
+                    placeholder="Client Secret"
+                    required
+                />
+                <input
+                    type="text"
+                    name="oidcIssuer"
+                    placeholder="OIDC Issuer"
+                    required
+                />
+                <input
+                    type="text"
+                    name="targetPod"
+                    placeholder="Target Pod Folder URL"
+                    required
+                />
+                <button type="submit">Update Settings</button>
+            </form>
+
+            <a href="/">← Back to Uploader</a>
+        </div>
+
+        <script>
+            const form = document.getElementById("settings-form");
+
+            async function loadSettings() {
+                try {
+                    const res = await fetch("/settings");
+                    if (!res.ok) throw new Error("Not logged in");
+                    const data = await res.json();
+                    form.firstName.value = data.firstName || "";
+                    form.lastName.value = data.lastName || "";
+                    form.clientId.value = data.clientId;
+                    form.clientSecret.value = data.clientSecret;
+                    form.oidcIssuer.value = data.oidcIssuer;
+                    form.targetPod.value = data.targetPod;
+                } catch {
+                    alert("⚠️ Not logged in. Redirecting...");
+                    setTimeout(() => (window.location = "/login.html"), 1500);
+                }
+            }
+
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                const data = Object.fromEntries(new FormData(form));
+                try {
+                    const res = await fetch("/settings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(data),
+                    });
+                    const msg = await res.text();
+                    alert(msg);
+                } catch {
+                    alert("Failed to update settings.");
+                }
+            };
+
+            loadSettings();
+        </script>
+    </body>
+</html>

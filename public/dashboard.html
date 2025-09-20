@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Refugee Data Dashboard</title>
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f0f2f5;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
+                min-height: 100vh;
+                padding-top: 4rem;
+            }
+
+            .dashboard {
+                background: #fff;
+                padding: 2rem 3rem;
+                border-radius: 10px;
+                box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+                width: 90%;
+                max-width: 600px;
+                text-align: center;
+            }
+
+            h1 {
+                color: #2c3e50;
+                font-size: 1.8rem;
+                margin-bottom: 2rem;
+            }
+
+            .button-grid {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            button {
+                padding: 1rem;
+                font-size: 1rem;
+                background-color: #003366;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: background-color 0.3s ease;
+                width: 100%;
+            }
+
+            button:hover {
+                background-color: #005fa3;
+            }
+
+            @media (min-width: 480px) {
+                .button-grid {
+                    grid-template-columns: 1fr 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="dashboard">
+            <h1>Welcome to the Secure Refugee Portal</h1>
+            <div id="user-buttons" class="button-grid"></div>
+        </div>
+
+        <script>
+            async function initDashboard() {
+                try {
+                    const res = await fetch("/me");
+                    if (!res.ok) throw new Error("Not logged in");
+                    const user = await res.json();
+
+                    const container = document.getElementById("user-buttons");
+
+                    if (user.email.endsWith("@ngo.com")) {
+                        container.innerHTML = `
+              <button onclick="window.location.href='requests.html'">📨 View Incoming Alerts</button>
+              <button onclick="window.location.href='view-gate-admin.html'">🔐 Open Secure Document Viewer</button>
+            `;
+                    } else {
+                        container.innerHTML = `
+              <button onclick="window.location.href='index.html'">📂 Upload Documents</button>
+              <button onclick="window.open('https://refugee-pod.solidcommunity.net/public/', '_blank')">🔗 Towards Metadata</button>
+              <button onclick="sendAlert()">🆘 Alert NGO / Request Help</button>
+              <button onclick="window.location.href='journal.html'">📓 Journal</button>
+            `;
+                    }
+                } catch (err) {
+                    alert("❌ Session expired. Redirecting to login.");
+                    window.location.href = "/login.html";
+                }
+            }
+
+            function sendAlert() {
+                if (!navigator.geolocation) {
+                    alert("Geolocation is not supported by your browser.");
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        const payload = {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                        };
+
+                        try {
+                            const response = await fetch("/alert", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(payload),
+                            });
+
+                            const result = await response.text();
+                            alert(result);
+                        } catch (err) {
+                            alert("❌ Failed to send alert.");
+                            console.error(err);
+                        }
+                    },
+                    () => {
+                        alert("Unable to retrieve your location.");
+                    },
+                );
+            }
+
+            initDashboard();
+        </script>
+    </body>
+</html>

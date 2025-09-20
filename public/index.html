@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Solid File Uploader</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 2em auto; background: white; padding: 2em; border-radius: 10px; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
+    h2 { margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+    .button-group { display: flex; flex-wrap: wrap; gap: 0.5em; }
+    #logout-btn, #settings-btn, #view-gate-btn, #sync-btn {
+      background: #2a9d8f; color: white; border: none; padding: 0.5em 1em; border-radius: 5px; cursor: pointer;
+    }
+    #logout-btn { background: #e63946; }
+    #upload-form { display: flex; flex-direction: column; gap: 1em; margin-top: 1em; }
+    button[type="submit"] { background: #457b9d; color: white; border: none; padding: 0.75em; border-radius: 5px; cursor: pointer; font-size: 1rem; }
+    ul { list-style: none; padding: 0; }
+    li { margin-bottom: 1.5em; border: 1px solid #eee; padding: 1em; border-radius: 8px; background: #fafafa; display: flex; flex-direction: column; gap: 0.5em; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5em; }
+    .actions button { flex: 1; padding: 0.5em; font-size: 0.9rem; border: none; border-radius: 4px; cursor: pointer; }
+    .copy-link { background: #6c757d; color: white; }
+    .copy-original { background: #1d3557; color: white; }
+    .delete { background: #e63946; color: white; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>
+      Upload to Solid Pod
+      <span class="button-group">
+        <button id="view-gate-btn">View Document</button>
+        <button id="settings-btn">Settings</button>
+        <button id="sync-btn">🔄 Sync My Files</button>
+        <button id="logout-btn">Logout</button>
+      </span>
+    </h2>
+
+    <p id="welcome-msg"></p>
+
+    <form id="upload-form">
+      <input type="file" id="fileInput" />
+      <button type="submit">Upload</button>
+    </form>
+
+    <h3>Uploaded Files</h3>
+    <ul id="file-list"></ul>
+  </div>
+
+  <script>
+    const form = document.getElementById("upload-form");
+    const fileList = document.getElementById("file-list");
+
+    document.getElementById("logout-btn").onclick = async () => {
+      const res = await fetch("/logout");
+      const msg = await res.text();
+      alert(msg);
+      window.location = "/login.html";
+    };
+
+    document.getElementById("settings-btn").onclick = () => window.location = "/settings.html";
+    document.getElementById("view-gate-btn").onclick = () => window.location = "/view-gate.html";
+    document.getElementById("sync-btn").onclick = loadSyncedFiles;
+
+    async function loadUser() {
+      try {
+        const res = await fetch("/me");
+        const data = await res.json();
+        document.getElementById("welcome-msg").textContent = `Welcome, ${data.email}`;
+      } catch {
+        window.location = "/login.html";
+      }
+    }
+
+    loadUser();
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const file = document.getElementById("fileInput").files[0];
+      if (!file) return alert("Please choose a file first.");
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/upload", { method: "POST", body: formData });
+        const result = await res.json();
+        alert(result.message || "✅ Upload complete");
+        renderFileItem({
+          title: file.name,
+          url: result.url,
+          encryptedLocalFile: result.encryptedLocalFile
+        });
+      } catch (err) {
+        alert("Upload failed: " + err.message);
+      }
+    });
+
+    function renderFileItem({ title, url, encryptedLocalFile }) {
+      const fileName = title || decodeURIComponent(url?.split("/").pop() || encryptedLocalFile || "Unnamed");
+      const encName = encryptedLocalFile || (fileName + ".enc");
+      const viewLink = `${location.origin}/view?file=${encodeURIComponent(encName)}`;
+
+      const li = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = url || "#";
+      link.target = "_blank";
+      link.textContent = fileName;
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const copyOriginal = document.createElement("button");
+      copyOriginal.textContent = "🔐 Copy Original Link";
+      copyOriginal.className = "copy-original";
+      copyOriginal.onclick = () => {
+        if (encName) {
+          navigator.clipboard.writeText(viewLink);
+          alert("🔐 Original link copied!");
+        } else {
+          alert("❌ No original encrypted file name found.");
+        }
+      };
+
+      const copyPod = document.createElement("button");
+      copyPod.textContent = "🔗 Copy Link";
+      copyPod.className = "copy-link";
+      copyPod.onclick = () => {
+        if (url) {
+          navigator.clipboard.writeText(url);
+          alert("🔗 Pod link copied!");
+        } else {
+          alert("❌ No Pod URL available.");
+        }
+      };
+
+      const del = document.createElement("button");
+      del.textContent = "🗑️ Delete";
+      del.className = "delete";
+      del.onclick = async () => {
+        if (confirm(`Delete "${fileName}"?`)) {
+          const res = await fetch(`/file?url=${encodeURIComponent(url)}`, { method: "DELETE" });
+          alert(await res.text());
+          li.remove();
+        }
+      };
+
+      actions.append(copyOriginal, copyPod, del);
+      li.append(link, actions);
+      fileList.appendChild(li);
+    }
+
+    async function loadSyncedFiles() {
+      try {
+        const res = await fetch("/sync");
+        const files = await res.json();
+        fileList.innerHTML = "";
+        files.forEach(file => renderFileItem(file));
+      } catch (err) {
+        alert("❌ Sync failed: " + err.message);
+      }
+    }
+  </script>
+</body>
+</html>

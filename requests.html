@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>NGO Admin Alerts</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: #eee;
+                padding: 2rem;
+            }
+            h1 {
+                text-align: center;
+                color: #2c3e50;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                background: #fff;
+            }
+            th,
+            td {
+                padding: 1rem;
+                border: 1px solid #ccc;
+                text-align: center;
+            }
+            th {
+                background-color: #003366;
+                color: white;
+            }
+            select,
+            button {
+                padding: 0.5rem 1rem;
+                margin: 0.25rem;
+            }
+            .top-actions {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 1rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="top-actions">
+            <button onclick="goBack()">🔙 Back to Admin Options</button>
+            <h1>📨 Incoming Refugee Alerts</h1>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="alerts-table"></tbody>
+        </table>
+
+        <script>
+            function goBack() {
+                window.location.href = "/dashboard.html";
+            }
+
+            async function loadAlerts() {
+                try {
+                    console.log("🔄 Loading alerts...");
+                    const res = await fetch("/alerts");
+                    console.log("📡 /alerts response:", res);
+                    if (!res.ok) throw new Error("Failed to load alerts.");
+                    const alerts = await res.json();
+                    console.log("✅ Loaded alerts:", alerts);
+
+                    const tbody = document.getElementById("alerts-table");
+                    tbody.innerHTML = "";
+
+                    alerts.forEach((alert) => {
+                        const tr = document.createElement("tr");
+
+                        const locationUrl = `https://maps.google.com?q=${alert.location.latitude},${alert.location.longitude}`;
+
+                        tr.innerHTML = `
+            <td>${new Date(alert.timestamp).toLocaleString()}</td>
+            <td>${(alert.firstName || "") + " " + (alert.lastName || "")}</td>
+            <td>${alert.email || "Unknown"}</td>
+            <td><a href="${locationUrl}" target="_blank">View</a></td>
+            <td>
+              <select onchange="updateStatus('${alert.id}', this.value)">
+                ${["pending", "contacted", "rescued", "lost"]
+                    .map(
+                        (status) =>
+                            `<option value="${status}" ${alert.status === status ? "selected" : ""}>${status}</option>`,
+                    )
+                    .join("")}
+              </select>
+            </td>
+            <td><button onclick="removeAlert('${alert._id || alert.id}')">🗑️ Remove</button></td>
+
+          `;
+
+                        tbody.appendChild(tr);
+                    });
+                } catch (err) {
+                    console.error("❌ Error loading alerts:", err);
+                    alert("⚠️ Failed to load alerts.");
+                }
+            }
+
+            async function updateStatus(id, status) {
+                try {
+                    console.log("🔁 Updating status", id, status);
+                    const res = await fetch(`/alerts/${id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ status }),
+                    });
+                    console.log("📬 PATCH /alerts response:", res);
+                    await loadAlerts();
+                } catch (err) {
+                    console.error("❌ Failed to update status:", err);
+                    alert("❌ Failed to update status");
+                }
+            }
+
+            async function removeAlert(id) {
+                if (!confirm("Are you sure you want to remove this alert?"))
+                    return;
+                try {
+                    console.log("🗑️ Removing alert", id);
+                    const res = await fetch(`/alerts/${id}/remove`, {
+                        method: "POST",
+                    });
+                    console.log("📬 POST /alerts/remove response:", res);
+                    if (!res.ok) throw new Error("Removal failed");
+                    await loadAlerts();
+                } catch (err) {
+                    console.error("❌ Failed to remove alert:", err);
+                    alert("❌ Failed to remove alert");
+                }
+            }
+
+            loadAlerts();
+        </script>
+    </body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Sign Up – Solid File Uploader</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f2f5;
+    }
+
+    .container {
+      max-width: 450px;
+      margin: 3em auto;
+      background: white;
+      padding: 2em;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.05);
+    }
+
+    h2 {
+      text-align: center;
+      color: #1d3557;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.75em;
+      margin: 0.75em 0;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 1rem;
+    }
+
+    button {
+      width: 100%;
+      padding: 0.75em;
+      background: #2a9d8f;
+      color: white;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .link {
+      text-align: center;
+      margin-top: 1em;
+      font-size: 0.95rem;
+    }
+
+    .link a {
+      color: #457b9d;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Create Account</h2>
+
+    <form id="signup-form">
+      <input type="email" name="email" placeholder="Email" required />
+      <input type="password" name="password" placeholder="Password" required />
+      <input type="text" name="clientId" placeholder="Solid Client ID" required />
+      <input type="text" name="clientSecret" placeholder="Solid Client Secret" required />
+      <input type="text" name="oidcIssuer" placeholder="OIDC Issuer" required />
+      <input type="text" name="targetPod" placeholder="Target Pod Folder URL" required />
+      <button type="submit">Sign Up</button>
+    </form>
+
+    <div class="link">
+      Already have an account? <a href="/login.html">Log in</a>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("signup-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const data = Object.fromEntries(new FormData(form));
+      const res = await fetch("/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const msg = await res.text();
+      alert(msg);
+      if (res.ok) window.location = "/login.html";
+    };
+  </script>
+</body>
+</html>

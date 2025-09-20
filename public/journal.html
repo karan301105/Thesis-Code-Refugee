@@ -3,62 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <title>Journal Entry</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        background-color: #f0f2f5;
-        margin: 0;
-        padding: 2rem;
-        display: flex;
-        justify-content: center;
+      :root { --bg:#f0f2f5; --card:#fff; --text:#2c3e50; --muted:#6b7280; --bd:#cbd5e1; --btn:#003366; --btn2:#6b7280; }
+      *{box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);margin:0;padding:2rem;display:flex;justify-content:center}
+      .container{background:var(--card);padding:2rem;border-radius:12px;box-shadow:0 8px 16px rgba(0,0,0,.1);width:100%;max-width:680px}
+      h1{margin:0 0 1rem;color:var(--text)}
+      .form-row{display:flex;flex-direction:column;gap:.35rem;margin-bottom:.9rem}
+      input,select,button{font-size:16px}
+      input[type="text"],input[type="date"],input[type="number"],select{
+        padding:.65rem .7rem;border:1px solid var(--bd);border-radius:8px;width:100%
       }
-      .container {
-        background: #fff;
-        padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-        width: 100%;
-        max-width: 650px;
-      }
-      h1 {
-        margin-top: 0;
-        color: #2c3e50;
-      }
-      .form-row {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        margin-bottom: 0.75rem;
-      }
-      input, select {
-        padding: 0.6rem;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-      }
-      fieldset {
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 0.75rem;
-        margin-bottom: 0.75rem;
-      }
-      legend { font-weight: bold; }
-      .grid-people {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 0.5rem;
-      }
-      .actions {
-        display: flex;
-        gap: 0.5rem;
-      }
-      button {
-        padding: 0.6rem 1rem;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      .btn-primary { background-color: #003366; color: #fff; }
-      .btn-secondary { background-color: #6b7280; color: #fff; }
+      fieldset{border:1px solid var(--bd);border-radius:10px;padding:.75rem;margin:0 0 .9rem}
+      legend{font-weight:700;color:#334155;padding:0 .25rem}
+      .grid-people{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem}
+      .actions{display:flex;gap:.6rem;flex-wrap:wrap}
+      button{padding:.65rem 1rem;border:none;border-radius:8px;cursor:pointer}
+      .btn-primary{background:var(--btn);color:#fff}
+      .btn-secondary{background:var(--btn2);color:#fff}
+      small{color:var(--muted)}
+      /* Autocomplete dropdown */
+      .ac-wrap{position:relative}
+      .ac-list{position:absolute;z-index:20;top:100%;left:0;right:0;background:#fff;border:1px solid var(--bd);
+               border-radius:8px;margin-top:.25rem;max-height:220px;overflow:auto;box-shadow:0 10px 20px rgba(0,0,0,.08)}
+      .ac-item{padding:.55rem .7rem;cursor:pointer}
+      .ac-item[aria-selected="true"], .ac-item:hover{background:#eef2ff}
+      .row-inline{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
     </style>
   </head>
   <body>
@@ -70,11 +41,28 @@
           <label for="j-date">Date</label>
           <input type="date" id="j-date" name="date" required />
         </div>
-        <!-- Location -->
+
+        <!-- Location (Photon autocomplete) -->
         <div class="form-row">
           <label for="j-location">Location</label>
-          <input type="text" id="j-location" name="location" placeholder="City / region / GPS" />
+          <div class="ac-wrap">
+            <input type="text" id="j-location" name="location_text" placeholder="Start typing a place…" />
+            <div id="loc-ac" class="ac-list" hidden></div>
+          </div>
+          <div class="row-inline">
+            <button type="button" id="btn-use-gps" class="btn-secondary">Use my current location</button>
+            <small>Pick a suggestion to store a standardized location.</small>
+          </div>
+
+          <!-- standardized hidden fields -->
+          <input type="hidden" id="j-display-name" name="location_display_name" />
+          <input type="hidden" id="j-lat" name="location_lat" />
+          <input type="hidden" id="j-lon" name="location_lon" />
+          <input type="hidden" id="j-country" name="location_country_iso2" />
+          <input type="hidden" id="j-osm-type" name="location_osm_type" />
+          <input type="hidden" id="j-osm-id" name="location_osm_id" />
         </div>
+
         <!-- People -->
         <fieldset>
           <legend>People</legend>
@@ -85,14 +73,16 @@
             <label>Total <input type="number" id="j-total" readonly /></label>
           </div>
         </fieldset>
+
         <!-- Ransom -->
         <div class="form-row">
-          <label>Ransom (amount)</label>
-          <div style="display:flex;gap:0.5rem;align-items:center;">
-            <input type="number" id="j-ransom" placeholder="0" min="0"/>
-            <label><input type="checkbox" id="j-ransom-unknown"/> Unknown</label>
+          <label>Ransom (amount in USD)</label>
+          <div class="row-inline">
+            <input type="number" id="j-ransom" placeholder="0" min="0" />
+            <label><input type="checkbox" id="j-ransom-unknown" /> Unknown</label>
           </div>
         </div>
+
         <!-- Event Type -->
         <div class="form-row">
           <label for="j-event-type">Event type</label>
@@ -104,70 +94,183 @@
             <option value="checkpoint">Checkpoint</option>
             <option value="disappearance">Disappearance</option>
           </select>
+          <small>Hold Ctrl/Cmd to select multiple</small>
         </div>
+
         <!-- Transport -->
         <div class="form-row">
           <label for="j-transport">Transport</label>
           <select id="j-transport">
             <option disabled selected>Select…</option>
-            <option>Foot</option>
-            <option>Van</option>
-            <option>Bus</option>
-            <option>Car</option>
-            <option>Boat</option>
-            <option>Other</option>
+            <option value="foot">Foot</option>
+            <option value="van">Van</option>
+            <option value="bus">Bus</option>
+            <option value="car">Car</option>
+            <option value="boat">Boat</option>
+            <option value="other">Other</option>
           </select>
         </div>
+
         <!-- Conditions -->
         <fieldset>
           <legend>Conditions</legend>
-          <label><input type="checkbox" value="no_food"/> No food</label>
-          <label><input type="checkbox" value="no_water"/> No water</label>
-          <label><input type="checkbox" value="medical_need"/> Medical need</label>
+          <label><input type="checkbox" value="no_food" name="conditions" /> No food</label>
+          <label><input type="checkbox" value="no_water" name="conditions" /> No water</label>
+          <label><input type="checkbox" value="medical_need" name="conditions" /> Medical need</label>
         </fieldset>
+
         <!-- Actions -->
         <div class="actions">
           <button type="submit" class="btn-primary">Save</button>
-          <button type="button" onclick="window.location.href='dashboard.html'" class="btn-secondary">Cancel</button>
+          <button type="button" onclick="window.location.href='dashboard.html'" class="btn-secondary">Back to Dashboard</button>
         </div>
       </form>
     </div>
 
     <script>
+      // ----- People totals -----
       const males = document.getElementById("j-males");
       const females = document.getElementById("j-females");
       const kids = document.getElementById("j-kids");
       const total = document.getElementById("j-total");
-      const ransom = document.getElementById("j-ransom");
-      const ransomUnknown = document.getElementById("j-ransom-unknown");
+      function updTotal(){ total.value=(+males.value||0)+(+females.value||0)+(+kids.value||0); }
+      [males,females,kids].forEach(el=>el.addEventListener("input",updTotal)); updTotal();
 
-      function updateTotal() {
-        total.value = (+males.value||0) + (+females.value||0) + (+kids.value||0);
+      // ----- Ransom Unknown toggle -----
+      const ransom=document.getElementById("j-ransom");
+      const ransomUnknown=document.getElementById("j-ransom-unknown");
+      ransomUnknown.addEventListener("change",()=>{ ransom.disabled=ransomUnknown.checked; if(ransomUnknown.checked) ransom.value=""; });
+
+      // ----- Free Autocomplete via Photon (OpenStreetMap) -----
+      const locInput = document.getElementById('j-location');
+      const acList  = document.getElementById('loc-ac');
+      const hidden = {
+        display: document.getElementById('j-display-name'),
+        lat: document.getElementById('j-lat'),
+        lon: document.getElementById('j-lon'),
+        country: document.getElementById('j-country'),
+        osmType: document.getElementById('j-osm-type'),
+        osmId: document.getElementById('j-osm-id'),
+      };
+
+      let acItems = []; let acIndex = -1; let acTimer = null;
+
+      function clearStandardized(){
+        hidden.display.value = hidden.lat.value = hidden.lon.value = hidden.country.value = hidden.osmType.value = hidden.osmId.value = "";
       }
-      [males,females,kids].forEach(el=>el.addEventListener("input",updateTotal));
-      updateTotal();
 
-      ransomUnknown.addEventListener("change",()=>{
-        ransom.disabled = ransomUnknown.checked;
-        if(ransomUnknown.checked) ransom.value="";
+      function renderList(features){
+        acList.innerHTML = "";
+        acItems = [];
+        acIndex = -1;
+        if(!features || !features.length){ acList.hidden = true; return; }
+        features.slice(0,8).forEach((f,i)=>{
+          const div = document.createElement('div');
+          div.className = 'ac-item';
+          div.role = 'option';
+          div.textContent = f.properties.name || f.properties.street || f.properties.city || f.properties.country || f.properties.postcode || f.properties.state || f.properties.district || f.properties.locality || f.properties.county || 'Unknown';
+          // Build a nicer display_name
+          const parts = [f.properties.name, f.properties.city, f.properties.state, f.properties.country].filter(Boolean);
+          const display = parts.join(', ') || f.properties.country || 'Unknown';
+
+          div.addEventListener('mousedown', (e)=>{ e.preventDefault(); pick(f, display); });
+          acList.appendChild(div);
+          acItems.push({el:div, feature:f, display});
+        });
+        acList.hidden = false;
+      }
+
+      function setActive(idx){
+        acItems.forEach((it,i)=> it.el.setAttribute('aria-selected', i===idx ? 'true' : 'false'));
+        acIndex = idx;
+      }
+
+      function pick(f, display){
+        // Fill input + standardized fields
+        locInput.value = display;
+        hidden.display.value = display;
+        hidden.lat.value = f.geometry.coordinates[1];
+        hidden.lon.value = f.geometry.coordinates[0];
+        hidden.country.value = (f.properties.countrycode || "").toUpperCase();
+        hidden.osmType.value = f.properties.osm_type || "";
+        hidden.osmId.value = f.properties.osm_id || "";
+        acList.hidden = true;
+      }
+
+      function debounceFetch(q){
+        clearTimeout(acTimer);
+        if(!q || q.trim().length < 2){ acList.hidden = true; clearStandardized(); return; }
+        acTimer = setTimeout(async ()=>{
+          try{
+            const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lang=en`;
+            const res = await fetch(url);
+            const data = await res.json();
+            renderList(data.features || []);
+          }catch(e){ console.error(e); acList.hidden = true; }
+        }, 220);
+      }
+
+      locInput.addEventListener('input', e=>{ clearStandardized(); debounceFetch(e.target.value); });
+      locInput.addEventListener('keydown', e=>{
+        if(acList.hidden) return;
+        if(e.key==='ArrowDown'){ e.preventDefault(); setActive(Math.min(acIndex+1, acItems.length-1)); }
+        else if(e.key==='ArrowUp'){ e.preventDefault(); setActive(Math.max(acIndex-1, 0)); }
+        else if(e.key==='Enter'){ if(acIndex>=0){ e.preventDefault(); const it = acItems[acIndex]; pick(it.feature, it.display); } }
+        else if(e.key==='Escape'){ acList.hidden = true; }
+      });
+      document.addEventListener('click', e=>{ if(!acList.contains(e.target) && e.target!==locInput) acList.hidden = true; });
+
+      // ----- Use my current location -> Photon reverse geocode -----
+      document.getElementById('btn-use-gps').addEventListener('click', ()=>{
+        if(!navigator.geolocation) return alert('Geolocation not supported.');
+        navigator.geolocation.getCurrentPosition(async pos=>{
+          const lat = pos.coords.latitude, lon = pos.coords.longitude;
+          try{
+            const url = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=en`;
+            const res = await fetch(url);
+            const data = await res.json();
+            const f = (data && data.features && data.features[0]) || null;
+            if(!f) return alert('Could not resolve your location.');
+            const parts = [f.properties.name, f.properties.city, f.properties.state, f.properties.country].filter(Boolean);
+            const display = parts.join(', ') || f.properties.country || 'Current location';
+            pick(f, display);
+          }catch(err){ console.error(err); alert('Failed to resolve your location.'); }
+        }, ()=> alert('Unable to get GPS.'));
       });
 
+      // ----- Submit handler -----
       document.getElementById("journalEntryForm").addEventListener("submit", e=>{
         e.preventDefault();
         const data = {
-          date: document.getElementById("j-date").value,
-          location: document.getElementById("j-location").value,
-          people: { males:+males.value||0, females:+females.value||0, kids:+kids.value||0, total:+total.value||0 },
-          ransom: ransomUnknown.checked? "unknown" : ransom.value||null,
+          date: document.getElementById("j-date").value || null,
+          location: {
+            text: document.getElementById("j-location").value || null,
+            display_name: hidden.display.value || null,
+            lat: hidden.lat.value || null,
+            lon: hidden.lon.value || null,
+            country_iso2: hidden.country.value || null,
+            osm_type: hidden.osmType.value || null,
+            osm_id: hidden.osmId.value || null
+          },
+          people: {
+            males: +males.value||0, females:+females.value||0, kids:+kids.value||0, total:+total.value||0
+          },
+          ransom: ransomUnknown.checked ? "unknown" : (ransom.value ? Number(ransom.value) : null),
           eventTypes: Array.from(document.getElementById("j-event-type").selectedOptions).map(o=>o.value),
-          transport: document.getElementById("j-transport").value,
-          conditions: Array.from(document.querySelectorAll("fieldset input[type=checkbox]:checked")).map(c=>c.value)
+          transport: document.getElementById("j-transport").value || null,
+          conditions: Array.from(document.querySelectorAll('input[name="conditions"]:checked')).map(cb=>cb.value)
         };
-        console.log("Journal entry:",data);
+
+        console.log("Journal entry:", data);
         alert("Journal entry saved (see console).");
+
+        // TODO: Send to backend / Solid Pod.
+        // fetch('/api/journal', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+
         e.target.reset();
-        updateTotal();
+        updTotal();
         ransom.disabled=false;
+        clearStandardized();
       });
     </script>
   </body>

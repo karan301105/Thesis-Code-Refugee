@@ -12,5 +12,33 @@
     "targetPod": "https://refugee-pod.solidcommunity.net/public/",
     "firstName": "",
     "lastName": ""
+  },
+  {
+    "email": "karangupta@ngo.com",
+    "password": "$2b$10$b5nU/4k00Qe/4I/VCMld2eWcyTUbKrMIX9uHDUAAwYMG3pGXJukRS",
+    "clientId": "ngo_e071bd9f-cf67-400f-b4dc-534f0c293f82",
+    "clientSecret": {
+      "iv": "a64bfde11a136b26a6e4b116",
+      "tag": "dbde57eb02810620bb7e179008cf4d53",
+      "data": "4e154ebcc8c32ef79a497ea416aabf3d933fbe655bb95cfb326abc3b6f06e5cb477ceb14b83c5d276e0e96939b089e0cf61e2fccc43b7a1ab55325a4ac60bdc32ce402e69529b5c22d2bb2567eb30059bac2ed88dbe9ff436368369d9ff2236328858aa4947bd95de88d620d914bd611118c7682a7d68440dd49003d9c5449ef"
+    },
+    "oidcIssuer": "https://solidcommunity.net/",
+    "targetPod": "https://ngo-pod.solidcommunity.net/public",
+    "firstName": "",
+    "lastName": ""
+  },
+  {
+    "email": "refugee1@gmail.com",
+    "password": "$2b$10$MHJYlt4kFeayTNDw5sZvnudNNE9vOUldxL9JG4J11mei.i6.uWX9q",
+    "clientId": "refugee1_7e3e3c96-dfc8-428b-8620-03b08a8fb71a",
+    "clientSecret": {
+      "iv": "d7b57b2c766d2e318238fec6",
+      "tag": "151e3b4a5ae7ebc4a301a55d3cf536e0",
+      "data": "9db50fc71e714e584df1badeb7b4bcda060f03d8c816a8301a86567c2241cbe857d4b21360c1b4b6bbaba48da9c30165fd4fec82ed206420f3afd03a3d887f6fdb9b2f4a128460cf01db37d56a98392e580b5df918d9a5f5b8c59cd18dae336c8a9d8e3159814d7ef8cbe4f5f5b7023dcaf834fdf7a1cf486a43f6cd348f56ca"
+    },
+    "oidcIssuer": "https://solidcommunity.net/",
+    "targetPod": "https://refuggee-podsss.solidcommunity.net/public/",
+    "firstName": "",
+    "lastName": ""
   }
 ]

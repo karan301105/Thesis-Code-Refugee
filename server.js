@@ -10,7 +10,7 @@ import {
   getThingAll,
   getStringNoLocale,
 
-  // NEW: solid RDF + container + ACL helpers for journal save
+  // solid RDF + container + ACL helpers for journal save
   createSolidDataset,
   setThing,
   saveSolidDatasetAt,
@@ -27,6 +27,7 @@ import {
 } from "@inrupt/solid-client";
 import dotenv from "dotenv";
 import fs from "fs";
+import { promises as fsp } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { processAndBlur } from "./ocrProcess.js";
@@ -92,7 +93,7 @@ const rawDir = path.join(uploadsDir, "raw");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// (Optional) NGO aggregation dirs if you add them later
+// (Optional) NGO aggregation dirs
 const DATA_DIR = path.join(__dirname, "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -371,6 +372,51 @@ async function grantNgoReadIfConsented(resourceUrl, consent, sessionNode) {
   }
 }
 
+/** Decide public vs private bases from targetPod */
+function basesFromTargetPod(targetPod) {
+  const base = targetPod.endsWith("/") ? targetPod : targetPod + "/";
+  const endsWithPublic = /\/public\/?$/i.test(base);
+  if (endsWithPublic) {
+    const privateBase = base.replace(/public\/?$/i, "");
+    const publicBase = base;
+    return { privateBase, publicBase };
+  }
+  const privateBase = base;
+  const publicBase = new URL("public/", privateBase).href;
+  return { privateBase, publicBase };
+}
+
+/** Append a consented link record for NGO list */
+const NGO_CONSENTED_PATH = path.join(DATA_DIR, "consented-journals.jsonl");
+async function appendConsentedLink(entry) {
+  const line = JSON.stringify(entry) + "\n";
+  await fsp.appendFile(NGO_CONSENTED_PATH, line, "utf8");
+}
+
+/** NGO-only: list consented links (newest first) */
+app.get("/ngo/consented-journals", async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (!user || user.role !== "admin")
+      return res.status(403).send("Forbidden");
+    let rows = [];
+    try {
+      const txt = await fsp.readFile(NGO_CONSENTED_PATH, "utf8");
+      rows = txt
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+        .reverse();
+    } catch (_) {
+      // none yet
+    }
+    res.json(rows);
+  } catch (err) {
+    console.error("GET /ngo/consented-journals failed:", err);
+    res.status(500).send("Failed to load consented journals.");
+  }
+});
+
 /**
  * POST /journal
  * Body: {
@@ -392,12 +438,10 @@ app.post("/journal", async (req, res) => {
       oidcIssuer: user.oidcIssuer,
     });
 
-    // Determine the container to store entries
-    // If targetPod is already .../public/, we'll store at .../public/journal/
-    const base = user.targetPod.endsWith("/")
-      ? user.targetPod
-      : user.targetPod + "/";
-    const containerUrl = new URL("journal/", base).href;
+    // Choose base by consent: public vs private
+    const { privateBase, publicBase } = basesFromTargetPod(user.targetPod);
+    const baseForThisEntry = req.body?.consent ? publicBase : privateBase;
+    const containerUrl = new URL("journal/", baseForThisEntry).href;
 
     // Ensure container exists
     await ensureContainerAt(containerUrl, sessionNode);
@@ -416,22 +460,36 @@ app.post("/journal", async (req, res) => {
       fetch: sessionNode.fetch,
     });
 
-    // Optional: if consent provided, grant NGO read on this resource
-    await grantNgoReadIfConsented(
-      resourceUrl,
-      !!req.body?.consent,
-      sessionNode,
-    );
+    // Optional: if consent provided, grant NGO read on this resource AND record link
+    if (req.body?.consent) {
+      await grantNgoReadIfConsented(resourceUrl, true, sessionNode);
+      if (req.body?.consent) {
+        // record for NGO list
+        await appendConsentedLink({
+          url: resourceUrl,
+          timestamp_iso: new Date().toISOString(),
+          reporter_email: req.session.user?.email || null,
+          reporter_webId: sessionNode.info?.webId || null,
+          // a little useful context (optional):
+          date_event: req.body?.date || null,
+          location_display_name:
+            req.body?.location?.display_name ||
+            req.body?.location?.text ||
+            null,
+        });
+      }
+    }
 
     res.status(201).json({
       message: "✅ Journal entry saved to Solid Pod",
-      url: resourceUrl,
+      url: resourceUrl, // the client UI can ignore showing it
     });
   } catch (err) {
     console.error("❌ Journal save error:", err);
     res.status(500).send("Failed to save journal entry to Solid Pod.");
   }
 });
+
 // --- DEBUG: probe Solid login + container creation (remove in prod) ---
 app.get("/journal/_debug", async (req, res) => {
   try {
@@ -453,10 +511,8 @@ app.get("/journal/_debug", async (req, res) => {
       });
     }
 
-    const base = user.targetPod.endsWith("/")
-      ? user.targetPod
-      : user.targetPod + "/";
-    const containerUrl = new URL("journal/", base).href;
+    const { privateBase, publicBase } = basesFromTargetPod(user.targetPod);
+    const containerUrl = new URL("journal/", publicBase).href;
 
     const s = new Session();
     await s.login({
@@ -488,6 +544,8 @@ app.get("/journal/_debug", async (req, res) => {
       containerUrl,
       ensureContainer: ensure,
       headStatus,
+      privateBase,
+      publicBase,
     });
   } catch (err) {
     console.error("DEBUG /journal/_debug:", err);
@@ -496,6 +554,7 @@ app.get("/journal/_debug", async (req, res) => {
       .json({ ok: false, where: "debug", msg: err?.message || String(err) });
   }
 });
+
 // ---------- Start server ----------
 app.listen(3001, () => {
   console.log("🚀 Upload server listening at http://localhost:3001");

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Consented Journal Entries</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;background:#f0f2f5;margin:0;padding:2rem;display:flex;justify-content:center}
+    .wrap{background:#fff;max-width:900px;width:100%;padding:1.5rem 2rem;border-radius:12px;box-shadow:0 8px 16px rgba(0,0,0,.1)}
+    h1{margin:0 0 1rem;color:#2c3e50}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:.6rem .5rem;border-bottom:1px solid #e5e7eb;text-align:left;font-size:.95rem}
+    th{color:#334155}
+    .back{margin-bottom:1rem}
+    .btn{background:#003366;color:#fff;border:none;border-radius:8px;padding:.55rem .9rem;cursor:pointer}
+    .empty{color:#6b7280}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="back"><button class="btn" onclick="window.location.href='dashboard.html'">← Back</button></div>
+    <h1>Consented Journal Entries</h1>
+    <div id="list"></div>
+  </div>
+
+  <script>
+    async function load() {
+      const box = document.getElementById('list');
+      try {
+        const r = await fetch('/ngo/consented-journals');
+        if (r.status === 403) { box.textContent = 'Forbidden (admin only)'; return; }
+        if (!r.ok) throw new Error(await r.text());
+        const rows = await r.json();
+
+        if (!rows.length) { box.innerHTML = '<p class="empty">No consented entries yet.</p>'; return; }
+
+        const html = [
+          '<table>',
+          '<thead><tr><th>Date</th><th>Reporter</th><th>Location</th><th>Link</th></tr></thead>',
+          '<tbody>',
+          ...rows.map(r =>
+            `<tr>
+              <td>${r.date_event || ''}</td>
+              <td>${r.reporter_email || ''}</td>
+              <td>${r.location_display_name || ''}</td>
+              <td><a href="${r.url}" target="_blank" rel="noopener">Open</a></td>
+            </tr>`
+          ),
+          '</tbody></table>'
+        ].join('');
+        box.innerHTML = html;
+      } catch (e) {
+        box.textContent = 'Failed to load list: ' + (e.message || e);
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

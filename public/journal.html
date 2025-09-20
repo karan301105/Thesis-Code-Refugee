@@ -304,7 +304,6 @@
           }
           const out = await res.json().catch(()=> ({}));
           msgEl.textContent = "✅ Saved to your Solid Pod.";
-          if (out.url) msgEl.textContent += ` File: ${out.url}`;
           alert("Entry saved to your Solid Pod.");
 
           // Reset form

@@ -1,4 +1,5 @@
-// ✅ Final production-ready server.js with Redis session support and NGO alert system
+// ✅ Final production-ready server.js with Redis session support, NGO alert system,
+//    and Solid-Pod journal upload with optional NGO read-access per entry
 
 import express from "express";
 import fileUpload from "express-fileupload";
@@ -8,6 +9,21 @@ import {
   getSolidDataset,
   getThingAll,
   getStringNoLocale,
+
+  // NEW: solid RDF + container + ACL helpers for journal save
+  createSolidDataset,
+  setThing,
+  saveSolidDatasetAt,
+  buildThing,
+  createThing,
+  createContainerAt,
+  getSolidDatasetWithAcl,
+  hasResourceAcl,
+  hasAccessibleAcl,
+  getResourceAcl,
+  createAcl,
+  setAgentResourceAccess,
+  saveAclFor,
 } from "@inrupt/solid-client";
 import dotenv from "dotenv";
 import fs from "fs";
@@ -19,7 +35,7 @@ import authRoutes from "./auth.js";
 import syncRoutes from "./sync.js";
 import alertRoutes from "./alerts.js";
 import { Session } from "@inrupt/solid-client-authn-node";
-import fetch from "node-fetch";
+import fetch from "node-fetch"; // (kept in case other routes need it)
 import crypto from "crypto";
 import { writeFileSync } from "fs";
 import Redis from "ioredis";
@@ -35,7 +51,7 @@ app.use(fileUpload());
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
-// Redis session config
+// ---------- Redis session config ----------
 const RedisStore = connectRedis(session);
 const redisClient = new Redis({
   host: process.env.REDIS_HOST || "127.0.0.1",
@@ -50,9 +66,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: false, // set true if behind HTTPS proxy
       httpOnly: true,
-      maxAge: 1000 * 60 * 60,
+      maxAge: 1000 * 60 * 60, // 1 hour
     },
   }),
 );
@@ -69,12 +85,18 @@ app.use(authRoutes);
 app.use(syncRoutes);
 app.use(alertRoutes);
 
+// ---------- Local storage dirs ----------
 const uploadsDir = path.join(__dirname, "uploads");
 const rawDir = path.join(uploadsDir, "raw");
 [uploadsDir, rawDir].forEach((dir) => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+// (Optional) NGO aggregation dirs if you add them later
+const DATA_DIR = path.join(__dirname, "data");
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// ---------- Routes: file upload (existing) ----------
 app.post("/upload", async (req, res) => {
   const user = req.session.user;
   if (!user) return res.status(401).send("Unauthorized. Please log in.");
@@ -93,10 +115,10 @@ app.post("/upload", async (req, res) => {
     const redactedBuffer = await processAndBlur(file.data);
     await encryptFile(file.data, encryptedPath);
 
-    const session = new Session();
-    await session.login({
+    const sessionNode = new Session();
+    await sessionNode.login({
       clientId: user.clientId,
-      clientSecret: user.clientSecret,
+      clientSecret: user.clientSecret, // Assuming you already decrypt this in auth flow
       oidcIssuer: user.oidcIssuer,
     });
 
@@ -106,7 +128,7 @@ app.post("/upload", async (req, res) => {
     const remoteUrl = new URL(redactedName, podFolder).href;
     await overwriteFile(remoteUrl, redactedBuffer, {
       contentType: file.mimetype || "application/octet-stream",
-      fetch: session.fetch,
+      fetch: sessionNode.fetch,
     });
 
     const metadata = `
@@ -127,7 +149,7 @@ app.post("/upload", async (req, res) => {
     const remoteMetaUrl = new URL(metaName, podFolder).href;
     await overwriteFile(remoteMetaUrl, fs.readFileSync(metaPath), {
       contentType: "text/turtle",
-      fetch: session.fetch,
+      fetch: sessionNode.fetch,
     });
 
     fs.unlinkSync(metaPath);
@@ -142,9 +164,11 @@ app.post("/upload", async (req, res) => {
   }
 });
 
+// Expanded /me to include webId if present
 app.get("/me", (req, res) => {
   if (!req.session.user) return res.status(401).send("Unauthorized");
-  res.json({ email: req.session.user.email });
+  const { email, webId } = req.session.user;
+  res.json({ email, webId });
 });
 
 app.get("/logout", (req, res) => {
@@ -188,14 +212,16 @@ app.delete("/file", async (req, res) => {
       : user.targetPod + "/";
     const metaUrl = new URL(fileName + ".ttl", podFolder).href;
 
-    const session = new Session();
-    await session.login({
+    const sessionNode = new Session();
+    await sessionNode.login({
       clientId: user.clientId,
       clientSecret: user.clientSecret,
       oidcIssuer: user.oidcIssuer,
     });
 
-    const ttlDataset = await getSolidDataset(metaUrl, { fetch: session.fetch });
+    const ttlDataset = await getSolidDataset(metaUrl, {
+      fetch: sessionNode.fetch,
+    });
     const thing = getThingAll(ttlDataset)[0];
     const encryptedCopy = getStringNoLocale(
       thing,
@@ -207,7 +233,7 @@ app.delete("/file", async (req, res) => {
     }
 
     const deleteFromPod = async (targetUrl) => {
-      const response = await session.fetch(targetUrl, { method: "DELETE" });
+      const response = await sessionNode.fetch(targetUrl, { method: "DELETE" });
       if (!response.ok) {
         console.error(
           `❌ Failed to delete ${targetUrl}:`,
@@ -228,6 +254,249 @@ app.delete("/file", async (req, res) => {
   }
 });
 
+// ===================================================================================
+// NEW: Save journal entry to the refugee's Solid Pod (per-entry optional NGO read)
+// ===================================================================================
+
+const SCHEMA = "https://schema.org/";
+const WGS84 = "http://www.w3.org/2003/01/geo/wgs84_pos#";
+const DCT = "http://purl.org/dc/terms/";
+
+// Set your NGO WebID here or via env
+const NGO_WEBID =
+  process.env.NGO_WEBID || "https://example-ngo.org/profile/card#me";
+
+/** Ensure a Solid container exists (ignore error if it already exists). */
+async function ensureContainerAt(url, sessionNode) {
+  try {
+    await createContainerAt(url.endsWith("/") ? url : url + "/", {
+      fetch: sessionNode.fetch,
+    });
+  } catch (_) {
+    /* likely 409: already exists */
+  }
+}
+
+/** Build an RDF dataset for the journal entry (Event + linked Place). */
+function buildJournalDataset(entryIri, placeIri, payload) {
+  const {
+    date,
+    people = {},
+    ransom,
+    eventTypes = [],
+    transport,
+    conditions = [],
+    location = {},
+  } = payload;
+
+  // ----- Event -----
+  let ev = buildThing(createThing({ url: entryIri }))
+    .addUrl("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", SCHEMA + "Event")
+    .addStringNoLocale(SCHEMA + "name", "Refugee Journal Entry")
+    .addStringNoLocale(DCT + "created", new Date().toISOString())
+    .addStringNoLocale(SCHEMA + "startDate", date || "")
+    .addInteger(SCHEMA + "numberOfItems", people.total ?? 0)
+    .addInteger(SCHEMA + "maleCount", people.males ?? 0)
+    .addInteger(SCHEMA + "femaleCount", people.females ?? 0)
+    .addInteger(SCHEMA + "childrenCount", people.kids ?? 0)
+    .addStringNoLocale(SCHEMA + "monetaryAmount", String(ransom ?? ""))
+    .addStringNoLocale(SCHEMA + "vehicle", transport || "")
+    .addUrl(SCHEMA + "location", placeIri);
+
+  // Multi-valued: eventType
+  (eventTypes || []).forEach((v) => {
+    ev = ev.addStringNoLocale(SCHEMA + "eventType", String(v));
+  });
+
+  // Multi-valued: healthCondition
+  (conditions || []).forEach((v) => {
+    ev = ev.addStringNoLocale(SCHEMA + "healthCondition", String(v));
+  });
+
+  const eventThing = ev.build();
+
+  // ----- Place -----
+  const placeThing = buildThing(createThing({ url: placeIri }))
+    .addUrl("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", SCHEMA + "Place")
+    .addStringNoLocale(
+      SCHEMA + "name",
+      location.display_name || location.text || "",
+    )
+    .addStringNoLocale(
+      "http://www.w3.org/2006/vcard/ns#country-name",
+      location.country_iso2 || "",
+    )
+    .addDecimal(WGS84 + "lat", location.lat ? Number(location.lat) : 0)
+    .addDecimal(WGS84 + "long", location.lon ? Number(location.lon) : 0)
+    .addStringNoLocale(
+      SCHEMA + "identifier",
+      (location.osm_type ? `${location.osm_type}:` : "") +
+        (location.osm_id || ""),
+    )
+    .build();
+
+  let ds = createSolidDataset();
+  ds = setThing(ds, eventThing);
+  ds = setThing(ds, placeThing);
+  return ds;
+}
+
+/** Optionally grant NGO read access on the resource via WAC ACL. */
+async function grantNgoReadIfConsented(resourceUrl, consent, sessionNode) {
+  if (!consent || !NGO_WEBID) return;
+  try {
+    const dsWithAcl = await getSolidDatasetWithAcl(resourceUrl, {
+      fetch: sessionNode.fetch,
+    });
+
+    let resourceAcl = hasResourceAcl(dsWithAcl)
+      ? getResourceAcl(dsWithAcl)
+      : hasAccessibleAcl(dsWithAcl)
+        ? createAcl(dsWithAcl)
+        : null;
+
+    if (resourceAcl) {
+      resourceAcl = setAgentResourceAccess(resourceAcl, NGO_WEBID, {
+        read: true,
+        append: false,
+        write: false,
+        control: false,
+      });
+      await saveAclFor(dsWithAcl, resourceAcl);
+    } else {
+      console.warn("⚠️ Could not set ACL for resource (no accessible ACL).");
+    }
+  } catch (e) {
+    console.warn("⚠️ Setting NGO read access failed:", e?.message || e);
+  }
+}
+
+/**
+ * POST /journal
+ * Body: {
+ *   date, location:{text,display_name,lat,lon,country_iso2,osm_type,osm_id},
+ *   people:{males,females,kids,total}, ransom, eventTypes[], transport, conditions[],
+ *   consent: boolean // if true, grant NGO WebID read on this resource
+ * }
+ */
+app.post("/journal", async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (!user) return res.status(401).send("Unauthorized. Please log in.");
+
+    // Login to the user's Pod using their client credentials from the session
+    const sessionNode = new Session();
+    await sessionNode.login({
+      clientId: user.clientId,
+      clientSecret: user.clientSecret, // ensure plaintext here
+      oidcIssuer: user.oidcIssuer,
+    });
+
+    // Determine the container to store entries
+    // If targetPod is already .../public/, we'll store at .../public/journal/
+    const base = user.targetPod.endsWith("/")
+      ? user.targetPod
+      : user.targetPod + "/";
+    const containerUrl = new URL("journal/", base).href;
+
+    // Ensure container exists
+    await ensureContainerAt(containerUrl, sessionNode);
+
+    // Create resource IRI
+    const id = `entry-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    const entryIri = new URL(id, containerUrl).href;
+    const placeIri = entryIri + "#place";
+
+    // Build dataset
+    const dataset = buildJournalDataset(entryIri, placeIri, req.body || {});
+
+    // Save Turtle at entry.ttl
+    const resourceUrl = `${entryIri}.ttl`;
+    await saveSolidDatasetAt(resourceUrl, dataset, {
+      fetch: sessionNode.fetch,
+    });
+
+    // Optional: if consent provided, grant NGO read on this resource
+    await grantNgoReadIfConsented(
+      resourceUrl,
+      !!req.body?.consent,
+      sessionNode,
+    );
+
+    res.status(201).json({
+      message: "✅ Journal entry saved to Solid Pod",
+      url: resourceUrl,
+    });
+  } catch (err) {
+    console.error("❌ Journal save error:", err);
+    res.status(500).send("Failed to save journal entry to Solid Pod.");
+  }
+});
+// --- DEBUG: probe Solid login + container creation (remove in prod) ---
+app.get("/journal/_debug", async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (!user)
+      return res
+        .status(401)
+        .json({ ok: false, where: "session", msg: "Not logged in to app" });
+    if (
+      !user.clientId ||
+      !user.clientSecret ||
+      !user.oidcIssuer ||
+      !user.targetPod
+    ) {
+      return res.status(400).json({
+        ok: false,
+        where: "session",
+        msg: "Missing Solid creds in session",
+      });
+    }
+
+    const base = user.targetPod.endsWith("/")
+      ? user.targetPod
+      : user.targetPod + "/";
+    const containerUrl = new URL("journal/", base).href;
+
+    const s = new Session();
+    await s.login({
+      clientId: user.clientId,
+      clientSecret: user.clientSecret,
+      oidcIssuer: user.oidcIssuer,
+    });
+
+    let ensure = "skipped";
+    try {
+      await ensureContainerAt(containerUrl, s);
+      ensure = "ok";
+    } catch (e) {
+      ensure = "error: " + (e?.message || e);
+    }
+
+    // Try a HEAD on the container
+    let headStatus = null;
+    try {
+      const r = await s.fetch(containerUrl, { method: "HEAD" });
+      headStatus = r.status;
+    } catch (e) {
+      headStatus = "fetch error: " + (e?.message || e);
+    }
+
+    res.json({
+      ok: true,
+      webId: s.info.webId || null,
+      containerUrl,
+      ensureContainer: ensure,
+      headStatus,
+    });
+  } catch (err) {
+    console.error("DEBUG /journal/_debug:", err);
+    res
+      .status(500)
+      .json({ ok: false, where: "debug", msg: err?.message || String(err) });
+  }
+});
+// ---------- Start server ----------
 app.listen(3001, () => {
   console.log("🚀 Upload server listening at http://localhost:3001");
 });

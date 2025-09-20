@@ -30,6 +30,7 @@
       .ac-item{padding:.55rem .7rem;cursor:pointer}
       .ac-item[aria-selected="true"], .ac-item:hover{background:#eef2ff}
       .row-inline{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+      .help{color:var(--muted);font-size:.9rem}
     </style>
   </head>
   <body>
@@ -119,11 +120,22 @@
           <label><input type="checkbox" value="medical_need" name="conditions" /> Medical need</label>
         </fieldset>
 
+        <!-- Consent (optional) -->
+        <div class="form-row">
+          <label class="row-inline" for="j-consent">
+            <input type="checkbox" id="j-consent" />
+            Allow NGO to access this entry (read-only)
+          </label>
+          <div class="help">This only grants read access to this file in your Solid Pod. Nothing is sent to any NGO server.</div>
+        </div>
+
         <!-- Actions -->
         <div class="actions">
-          <button type="submit" class="btn-primary">Save</button>
+          <button type="submit" id="saveBtn" class="btn-primary">Save</button>
           <button type="button" onclick="window.location.href='dashboard.html'" class="btn-secondary">Back to Dashboard</button>
         </div>
+
+        <div id="msg" class="help" aria-live="polite" style="margin-top:.6rem;"></div>
       </form>
     </div>
 
@@ -238,9 +250,18 @@
         }, ()=> alert('Unable to get GPS.'));
       });
 
-      // ----- Submit handler -----
-      document.getElementById("journalEntryForm").addEventListener("submit", e=>{
+      // ----- Submit handler: POST to /journal so server saves in Solid Pod -----
+      const form = document.getElementById("journalEntryForm");
+      const saveBtn = document.getElementById("saveBtn");
+      const msgEl = document.getElementById("msg");
+      const consentEl = document.getElementById("j-consent");
+
+      form.addEventListener("submit", async (e)=>{
         e.preventDefault();
+        msgEl.textContent = "";
+        saveBtn.disabled = true;
+
+        // Build payload
         const data = {
           date: document.getElementById("j-date").value || null,
           location: {
@@ -258,19 +279,47 @@
           ransom: ransomUnknown.checked ? "unknown" : (ransom.value ? Number(ransom.value) : null),
           eventTypes: Array.from(document.getElementById("j-event-type").selectedOptions).map(o=>o.value),
           transport: document.getElementById("j-transport").value || null,
-          conditions: Array.from(document.querySelectorAll('input[name="conditions"]:checked')).map(cb=>cb.value)
+          conditions: Array.from(document.querySelectorAll('input[name="conditions"]:checked')).map(cb=>cb.value),
+          // consent to grant NGO read access on this resource in the Pod:
+          consent: !!(consentEl && consentEl.checked)
         };
 
-        console.log("Journal entry:", data);
-        alert("Journal entry saved (see console).");
+        // Simple guard: nudge user to pick a standardized location
+        if (!data.location.display_name) {
+          if (!confirm("You didn't pick a standardized location from the list. Continue anyway?")) {
+            saveBtn.disabled = false;
+            return;
+          }
+        }
 
-        // TODO: Send to backend / Solid Pod.
-        // fetch('/api/journal', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        try {
+          const res = await fetch("/journal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+          });
+          if (!res.ok) {
+            const txt = await res.text().catch(()=> "");
+            throw new Error(txt || ("HTTP " + res.status));
+          }
+          const out = await res.json().catch(()=> ({}));
+          msgEl.textContent = "✅ Saved to your Solid Pod.";
+          if (out.url) msgEl.textContent += ` File: ${out.url}`;
+          alert("Entry saved to your Solid Pod.");
 
-        e.target.reset();
-        updTotal();
-        ransom.disabled=false;
-        clearStandardized();
+          // Reset form
+          form.reset();
+          updTotal();
+          ransom.disabled=false;
+          // Clear hidden standardized fields
+          hidden.display.value = hidden.lat.value = hidden.lon.value = hidden.country.value = hidden.osmType.value = hidden.osmId.value = "";
+        } catch (err) {
+          console.error(err);
+          msgEl.textContent = "❌ Failed to save entry. Please ensure you are logged in.";
+          alert("Failed to save entry. Please ensure you are logged in.");
+        } finally {
+          saveBtn.disabled = false;
+        }
       });
     </script>
   </body>

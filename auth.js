@@ -4,6 +4,11 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import path from "path";
 import dotenv from "dotenv";
+
+// ⭐ NEW: discover webId / sanity-check Solid credentials on login
+import { Session } from "@inrupt/solid-client-authn-node";
+import { getPodUrlAll } from "@inrupt/solid-client";
+
 dotenv.config();
 
 const router = express.Router();
@@ -12,7 +17,7 @@ const USERS_FILE = path.join("users.json");
 const ENC_ALGO = "aes-256-gcm";
 const ENC_KEY = crypto
   .createHash("sha256")
-  .update(process.env.ENCRYPTION_SECRET)
+  .update(process.env.ENCRYPTION_SECRET || "")
   .digest();
 
 function encryptSecret(secret) {
@@ -98,14 +103,42 @@ router.post("/login", async (req, res) => {
       return res.status(401).send("Invalid credentials.");
     }
 
+    // Decrypt Solid client secret for this session
+    const clientSecretPlain = decryptSecret(user.clientSecret);
+
+    // ⭐ NEW: try to obtain webId (best-effort; non-fatal if it fails)
+    let webId = undefined;
+    try {
+      const solidSession = new Session();
+      await solidSession.login({
+        clientId: user.clientId,
+        clientSecret: clientSecretPlain,
+        oidcIssuer: user.oidcIssuer,
+      });
+      webId = solidSession.info.webId;
+      // Optional light check: attempt to discover pod(s)
+      // (If this fails, we just ignore; the /journal route can still try later)
+      if (webId) {
+        await getPodUrlAll(webId, { fetch: solidSession.fetch });
+      }
+      // End Solid session; the server route will create its own per-request session
+      await solidSession.logout().catch(() => {});
+    } catch (e) {
+      console.warn(
+        "Solid login during /login failed (non-fatal):",
+        e?.message || e,
+      );
+    }
+
     req.session.user = {
       email,
       clientId: user.clientId,
-      clientSecret: decryptSecret(user.clientSecret),
+      clientSecret: clientSecretPlain, // plaintext in-session for server-side Solid actions
       oidcIssuer: user.oidcIssuer,
       targetPod: user.targetPod,
       firstName: user.firstName || "",
       lastName: user.lastName || "",
+      webId, // may be undefined if discovery failed
     };
 
     res.send("✅ Login successful.");
@@ -165,14 +198,17 @@ router.post("/settings", async (req, res) => {
   user.lastName = lastName || "";
 
   await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
+
+  // Update session with plaintext secret so routes like /journal keep working
   req.session.user = {
     email: user.email,
     clientId,
-    clientSecret,
+    clientSecret, // plaintext
     oidcIssuer,
     targetPod,
     firstName: user.firstName,
     lastName: user.lastName,
+    webId: req.session.user.webId, // keep any discovered webId
   };
 
   res.send("✅ Settings updated.");

@@ -29,15 +29,15 @@
   },
   {
     "email": "refugee1@gmail.com",
-    "password": "$2b$10$MHJYlt4kFeayTNDw5sZvnudNNE9vOUldxL9JG4J11mei.i6.uWX9q",
-    "clientId": "refugee1_7e3e3c96-dfc8-428b-8620-03b08a8fb71a",
+    "password": "$2b$10$CxZA4FWzivodgP/jCVSWW.SxnBj.0q/7Ueem5gwrfT5j/685ph7bK",
+    "clientId": "ref-02_751f1ff9-75d9-436b-8ca1-9530eb24feb2",
     "clientSecret": {
-      "iv": "d7b57b2c766d2e318238fec6",
-      "tag": "151e3b4a5ae7ebc4a301a55d3cf536e0",
-      "data": "9db50fc71e714e584df1badeb7b4bcda060f03d8c816a8301a86567c2241cbe857d4b21360c1b4b6bbaba48da9c30165fd4fec82ed206420f3afd03a3d887f6fdb9b2f4a128460cf01db37d56a98392e580b5df918d9a5f5b8c59cd18dae336c8a9d8e3159814d7ef8cbe4f5f5b7023dcaf834fdf7a1cf486a43f6cd348f56ca"
+      "iv": "29bd1f2163115c87fc73503a",
+      "tag": "d741f7814bc3ffed186e70761c4a912f",
+      "data": "1d6f95c9117d1f4678dc128414116d3b77e621ab890dacedd46993753a23b5d3e72a86d813cbbd43b051ec0306a4322d29e3f493adc9f51e9df613927a8e55d8dc4e720f44a8a89e2fd75c581ca65c2620e85a8eb8661f8bc29398b6af68a8cccc19ac7f0447ea8d9a099e573245cb756edfe73af8528c66383045611de0ac1b"
     },
-    "oidcIssuer": "https://solidcommunity.net/",
-    "targetPod": "https://refuggee-podsss.solidcommunity.net/public/",
+    "oidcIssuer": "https://solidcommunity.net",
+    "targetPod": "https://refugee-02.solidcommunity.net/public",
     "firstName": "",
     "lastName": ""
   }

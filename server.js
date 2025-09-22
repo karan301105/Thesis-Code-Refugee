@@ -1,7 +1,8 @@
 // ✅ Final production-ready server.js with Redis session support, NGO alert system,
-//    and Solid-Pod journal upload with optional NGO read-access per entry
+//    Solid-Pod journal upload, and Similarity Buckets UI/API
 
 import express from "express";
+import path from "path";
 import fileUpload from "express-fileupload";
 import session from "express-session";
 import {
@@ -9,7 +10,6 @@ import {
   getSolidDataset,
   getThingAll,
   getStringNoLocale,
-
   // solid RDF + container + ACL helpers for journal save
   createSolidDataset,
   setThing,
@@ -28,7 +28,6 @@ import {
 import dotenv from "dotenv";
 import fs from "fs";
 import { promises as fsp } from "fs";
-import path from "path";
 import { fileURLToPath } from "url";
 import { processAndBlur } from "./ocrProcess.js";
 import { encryptFile, decryptFileToBuffer } from "./encryption.js";
@@ -41,6 +40,9 @@ import crypto from "crypto";
 import { writeFileSync } from "fs";
 import Redis from "ioredis";
 import connectRedis from "connect-redis";
+
+// 🔗 NEW: Similarity API route (compile your TS to JS or create routes/similar.js)
+import similarRoutes from "./routes/similar.js";
 
 dotenv.config();
 
@@ -82,9 +84,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// Mount existing routes
 app.use(authRoutes);
 app.use(syncRoutes);
 app.use(alertRoutes);
+
+// 🔗 NEW: mount similarity API
+app.use(similarRoutes);
 
 // ---------- Local storage dirs ----------
 const uploadsDir = path.join(__dirname, "uploads");
@@ -187,10 +193,10 @@ app.get("/view", async (req, res) => {
   if (!isFromGate)
     return res.status(403).send("Access denied. Use secure view interface.");
 
-  const encFilePath = path.join(rawDir, fileParam);
+  const encFilePath = path.join(rawDir, String(fileParam));
   try {
     const decryptedBuffer = await decryptFileToBuffer(encFilePath);
-    const ext = path.extname(fileParam).replace(".enc", "") || ".jpg";
+    const ext = path.extname(String(fileParam)).replace(".enc", "") || ".jpg";
     const mimeType = ext === ".pdf" ? "application/pdf" : "image/jpeg";
     res.setHeader("Content-Type", mimeType);
     res.send(decryptedBuffer);
@@ -207,7 +213,7 @@ app.delete("/file", async (req, res) => {
     return res.status(400).send("Missing URL or not logged in");
 
   try {
-    const fileName = decodeURIComponent(url.split("/").pop());
+    const fileName = decodeURIComponent(String(url).split("/").pop());
     const podFolder = user.targetPod.endsWith("/")
       ? user.targetPod
       : user.targetPod + "/";
@@ -245,7 +251,7 @@ app.delete("/file", async (req, res) => {
       }
     };
 
-    await deleteFromPod(url);
+    await deleteFromPod(String(url));
     await deleteFromPod(metaUrl);
 
     res.send("✅ File and metadata deleted from Solid Pod and local server.");
@@ -387,6 +393,7 @@ function basesFromTargetPod(targetPod) {
 }
 
 /** Append a consented link record for NGO list */
+//const DATA_DIR = path.join(__dirname, "data");
 const NGO_CONSENTED_PATH = path.join(DATA_DIR, "consented-journals.jsonl");
 async function appendConsentedLink(entry) {
   const line = JSON.stringify(entry) + "\n";
@@ -419,11 +426,7 @@ app.get("/ngo/consented-journals", async (req, res) => {
 
 /**
  * POST /journal
- * Body: {
- *   date, location:{text,display_name,lat,lon,country_iso2,osm_type,osm_id},
- *   people:{males,females,kids,total}, ransom, eventTypes[], transport, conditions[],
- *   consent: boolean // if true, grant NGO WebID read on this resource
- * }
+ * Body: { date, location:{...}, people:{...}, ransom, eventTypes[], transport, conditions[], consent }
  */
 app.post("/journal", async (req, res) => {
   try {
@@ -463,26 +466,20 @@ app.post("/journal", async (req, res) => {
     // Optional: if consent provided, grant NGO read on this resource AND record link
     if (req.body?.consent) {
       await grantNgoReadIfConsented(resourceUrl, true, sessionNode);
-      if (req.body?.consent) {
-        // record for NGO list
-        await appendConsentedLink({
-          url: resourceUrl,
-          timestamp_iso: new Date().toISOString(),
-          reporter_email: req.session.user?.email || null,
-          reporter_webId: sessionNode.info?.webId || null,
-          // a little useful context (optional):
-          date_event: req.body?.date || null,
-          location_display_name:
-            req.body?.location?.display_name ||
-            req.body?.location?.text ||
-            null,
-        });
-      }
+      await appendConsentedLink({
+        url: resourceUrl,
+        timestamp_iso: new Date().toISOString(),
+        reporter_email: req.session.user?.email || null,
+        reporter_webId: sessionNode.info?.webId || null,
+        date_event: req.body?.date || null,
+        location_display_name:
+          req.body?.location?.display_name || req.body?.location?.text || null,
+      });
     }
 
     res.status(201).json({
       message: "✅ Journal entry saved to Solid Pod",
-      url: resourceUrl, // the client UI can ignore showing it
+      url: resourceUrl,
     });
   } catch (err) {
     console.error("❌ Journal save error:", err);
@@ -553,6 +550,11 @@ app.get("/journal/_debug", async (req, res) => {
       .status(500)
       .json({ ok: false, where: "debug", msg: err?.message || String(err) });
   }
+});
+
+// 🔗 NEW: serve the Similarity UI page
+app.get("/similarity", (req, res) => {
+  res.sendFile(path.resolve(path.join(__dirname, "public", "similarity.html")));
 });
 
 // ---------- Start server ----------

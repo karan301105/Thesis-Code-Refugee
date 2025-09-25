@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>My Journal Entries</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #fff;
+      --muted: #6b7280;
+      --border: #eef0f5;
+      --accent: #0f62fe;
+      --danger: #dc2626;
+      --dark: #111827;
+      --radius: 16px;
+    }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); margin: 0; }
+    .container { max-width: 980px; margin: 32px auto; padding: 0 16px; }
+    .card { background: var(--card); border-radius: var(--radius); box-shadow: 0 2px 12px rgba(0,0,0,.06); padding: 20px; margin-bottom: 16px; }
+    .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .btn { background: var(--accent); color: #fff; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+    .btn.secondary { background: var(--dark); }
+    .btn.danger { background: var(--danger); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .section-title { display:flex; align-items:center; justify-content:space-between; gap: 8px; margin-bottom: 8px; }
+    .entry { display:flex; align-items:center; justify-content:space-between; border:1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 8px 0; background:#fff; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .empty { padding: 12px; border:1px dashed var(--border); border-radius: 12px; background: #fafbff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <div>
+          <h2 style="margin:0 0 6px">My Journal Entries</h2>
+          <div class="muted">Entries saved to your Solid Pod. You can delete private or public entries separately.</div>
+        </div>
+        <div class="row">
+          <button onclick="history.back()" class="btn secondary">← Back</button>
+          <button id="refreshBtn" class="btn">Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h3 style="margin:0">Private entries</h3>
+        <div class="muted" id="privContainerTxt"></div>
+      </div>
+      <div id="privateList" class="empty">Loading…</div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h3 style="margin:0">Public entries</h3>
+        <div class="muted" id="pubContainerTxt"></div>
+      </div>
+      <div id="publicList" class="empty">Loading…</div>
+    </div>
+  </div>
+
+  <script src="js/my-journal.js"></script>
+</body>
+</html>

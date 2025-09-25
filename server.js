@@ -1,5 +1,5 @@
 // ✅ Final production-ready server.js with Redis session support, NGO alert system,
-//    Solid-Pod journal upload, and Similarity Buckets UI/API
+//    Solid-Pod journal upload, Similarity Buckets UI/API, refugee list & delete
 
 import express from "express";
 import path from "path";
@@ -24,6 +24,7 @@ import {
   createAcl,
   setAgentResourceAccess,
   saveAclFor,
+  getContainedResourceUrlAll, // ⬅️ added here (no later duplicate import)
 } from "@inrupt/solid-client";
 import dotenv from "dotenv";
 import fs from "fs";
@@ -41,7 +42,7 @@ import { writeFileSync } from "fs";
 import Redis from "ioredis";
 import connectRedis from "connect-redis";
 
-// 🔗 NEW: Similarity API route (compile your TS to JS or create routes/similar.js)
+// 🔗 Similarity API route (JS build)
 import similarRoutes from "./routes/similar.js";
 
 dotenv.config();
@@ -89,7 +90,7 @@ app.use(authRoutes);
 app.use(syncRoutes);
 app.use(alertRoutes);
 
-// 🔗 NEW: mount similarity API
+// 🔗 mount similarity API
 app.use(similarRoutes);
 
 // ---------- Local storage dirs ----------
@@ -99,11 +100,11 @@ const rawDir = path.join(uploadsDir, "raw");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// (Optional) NGO aggregation dirs
+// NGO aggregation dir
 const DATA_DIR = path.join(__dirname, "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// ---------- Routes: file upload (existing) ----------
+// ---------- Routes: file upload ----------
 app.post("/upload", async (req, res) => {
   const user = req.session.user;
   if (!user) return res.status(401).send("Unauthorized. Please log in.");
@@ -171,7 +172,7 @@ app.post("/upload", async (req, res) => {
   }
 });
 
-// Expanded /me to include webId if present
+// Expanded /me
 app.get("/me", (req, res) => {
   if (!req.session.user) return res.status(401).send("Unauthorized");
   const { email, webId } = req.session.user;
@@ -186,6 +187,7 @@ app.get("/logout", (req, res) => {
   });
 });
 
+// Decrypt & view
 app.get("/view", async (req, res) => {
   const fileParam = req.query.file;
   const isFromGate = req.get("X-Trusted-Gate") === "true";
@@ -206,6 +208,7 @@ app.get("/view", async (req, res) => {
   }
 });
 
+// Delete encrypted local file (unchanged)
 app.delete("/file", async (req, res) => {
   const url = req.query.url;
   const user = req.session.user;
@@ -262,7 +265,7 @@ app.delete("/file", async (req, res) => {
 });
 
 // ===================================================================================
-// NEW: Save journal entry to the refugee's Solid Pod (per-entry optional NGO read)
+// Save journal entry to the refugee's Solid Pod (per-entry optional NGO read)
 // ===================================================================================
 
 const SCHEMA = "https://schema.org/";
@@ -310,12 +313,9 @@ function buildJournalDataset(entryIri, placeIri, payload) {
     .addStringNoLocale(SCHEMA + "vehicle", transport || "")
     .addUrl(SCHEMA + "location", placeIri);
 
-  // Multi-valued: eventType
   (eventTypes || []).forEach((v) => {
     ev = ev.addStringNoLocale(SCHEMA + "eventType", String(v));
   });
-
-  // Multi-valued: healthCondition
   (conditions || []).forEach((v) => {
     ev = ev.addStringNoLocale(SCHEMA + "healthCondition", String(v));
   });
@@ -355,7 +355,6 @@ async function grantNgoReadIfConsented(resourceUrl, consent, sessionNode) {
     const dsWithAcl = await getSolidDatasetWithAcl(resourceUrl, {
       fetch: sessionNode.fetch,
     });
-
     let resourceAcl = hasResourceAcl(dsWithAcl)
       ? getResourceAcl(dsWithAcl)
       : hasAccessibleAcl(dsWithAcl)
@@ -393,37 +392,124 @@ function basesFromTargetPod(targetPod) {
 }
 
 /** Append a consented link record for NGO list */
-//const DATA_DIR = path.join(__dirname, "data");
 const NGO_CONSENTED_PATH = path.join(DATA_DIR, "consented-journals.jsonl");
 async function appendConsentedLink(entry) {
   const line = JSON.stringify(entry) + "\n";
   await fsp.appendFile(NGO_CONSENTED_PATH, line, "utf8");
 }
 
-/** NGO-only: list consented links (newest first) */
+/** NGO-only: list consented links (newest first) with auto-prune of deleted URLs */
 app.get("/ngo/consented-journals", async (req, res) => {
   try {
     const user = req.session.user;
     if (!user || user.role !== "admin")
       return res.status(403).send("Forbidden");
+
+    // prevent browser/proxy caching stale lists
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+
     let rows = [];
     try {
       const txt = await fsp.readFile(NGO_CONSENTED_PATH, "utf8");
       rows = txt
         .split("\n")
         .filter(Boolean)
-        .map((l) => JSON.parse(l))
-        .reverse();
-    } catch (_) {
+        .map((l) => JSON.parse(l));
+    } catch {
       // none yet
+      return res.json([]);
     }
-    res.json(rows);
+
+    // Probe which ones still exist (HEAD). We expect read access only to consented (public or ACL-granted) links.
+    // Limit concurrency to avoid flooding (simple windowed loop).
+    const concurrency = 6;
+    const results = [];
+    let i = 0;
+
+    async function worker() {
+      while (i < rows.length) {
+        const idx = i++;
+        const row = rows[idx];
+        let alive = true;
+        try {
+          // Use node-fetch (from Session); unauth HEAD first, then fallback to GET if HEAD not allowed
+          const sessionNode = new Session();
+          // Optional: if you want to probe with a service account, login here; otherwise do plain fetch
+          const probe = await fetch(row.url, { method: "HEAD" });
+          if (!probe.ok) {
+            // Some Solid servers may not allow HEAD; try GET to test existence without reading body
+            const probe2 = await fetch(row.url, { method: "GET" });
+            alive = probe2.ok;
+          }
+        } catch {
+          alive = false;
+        }
+        results[idx] = { row, alive };
+      }
+    }
+
+    const workers = Array.from(
+      { length: Math.min(concurrency, rows.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
+
+    // Keep only alive; if any were pruned, rewrite the JSONL file
+    const aliveRows = results.filter((r) => r && r.alive).map((r) => r.row);
+    if (aliveRows.length !== rows.length) {
+      const newText =
+        aliveRows.map((r) => JSON.stringify(r)).join("\n") +
+        (aliveRows.length ? "\n" : "");
+      try {
+        await fsp.writeFile(NGO_CONSENTED_PATH, newText, "utf8");
+      } catch {}
+    }
+
+    // newest first
+    aliveRows.reverse();
+    res.json(aliveRows);
   } catch (err) {
     console.error("GET /ngo/consented-journals failed:", err);
     res.status(500).send("Failed to load consented journals.");
   }
 });
+// --- helpers for consented-journals cleanup ---
+function normalizeUrl(u) {
+  if (!u) return "";
+  try {
+    // decode, trim trailing slashes, lowercase scheme/host
+    const dec = decodeURIComponent(String(u).trim());
+    const url = new URL(dec);
+    url.hash = "";
+    // normalize host & protocol to lowercase; keep path/query as-is
+    const norm = `${url.protocol.toLowerCase()}//${url.host.toLowerCase()}${url.pathname.replace(/\/+$/, "")}${url.search}`;
+    return norm;
+  } catch {
+    // not a valid URL; best-effort normalization
+    return String(u).trim().replace(/\/+$/, "");
+  }
+}
 
+function removeFromConsentIndexByUrlSync(jsonlText, targetUrl) {
+  const target = normalizeUrl(targetUrl);
+  const out = [];
+  const lines = jsonlText.split("\n");
+  for (const l of lines) {
+    if (!l.trim()) continue;
+    try {
+      const obj = JSON.parse(l);
+      const cur = normalizeUrl(obj.url);
+      if (cur === target) continue; // drop
+      // also drop if decoded matches encoded (defensive)
+      if (normalizeUrl(decodeURIComponent(obj.url || "")) === target) continue;
+      out.push(JSON.stringify(obj));
+    } catch {
+      // malformed line → keep it (or drop; choose keep to avoid data loss)
+      out.push(l);
+    }
+  }
+  return out.join("\n") + (out.length ? "\n" : "");
+}
 /**
  * POST /journal
  * Body: { date, location:{...}, people:{...}, ransom, eventTypes[], transport, conditions[], consent }
@@ -433,11 +519,10 @@ app.post("/journal", async (req, res) => {
     const user = req.session.user;
     if (!user) return res.status(401).send("Unauthorized. Please log in.");
 
-    // Login to the user's Pod using their client credentials from the session
     const sessionNode = new Session();
     await sessionNode.login({
       clientId: user.clientId,
-      clientSecret: user.clientSecret, // ensure plaintext here
+      clientSecret: user.clientSecret,
       oidcIssuer: user.oidcIssuer,
     });
 
@@ -446,24 +531,18 @@ app.post("/journal", async (req, res) => {
     const baseForThisEntry = req.body?.consent ? publicBase : privateBase;
     const containerUrl = new URL("journal/", baseForThisEntry).href;
 
-    // Ensure container exists
     await ensureContainerAt(containerUrl, sessionNode);
 
-    // Create resource IRI
     const id = `entry-${new Date().toISOString().replace(/[:.]/g, "-")}`;
     const entryIri = new URL(id, containerUrl).href;
     const placeIri = entryIri + "#place";
 
-    // Build dataset
     const dataset = buildJournalDataset(entryIri, placeIri, req.body || {});
-
-    // Save Turtle at entry.ttl
     const resourceUrl = `${entryIri}.ttl`;
     await saveSolidDatasetAt(resourceUrl, dataset, {
       fetch: sessionNode.fetch,
     });
 
-    // Optional: if consent provided, grant NGO read on this resource AND record link
     if (req.body?.consent) {
       await grantNgoReadIfConsented(resourceUrl, true, sessionNode);
       await appendConsentedLink({
@@ -484,6 +563,101 @@ app.post("/journal", async (req, res) => {
   } catch (err) {
     console.error("❌ Journal save error:", err);
     res.status(500).send("Failed to save journal entry to Solid Pod.");
+  }
+});
+
+// ---------------- Refugee: list my journal entries (private + public) ----------------
+app.get("/journal/mine", async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (!user) return res.status(401).send("Unauthorized");
+
+    const sessionNode = new Session();
+    await sessionNode.login({
+      clientId: user.clientId,
+      clientSecret: user.clientSecret,
+      oidcIssuer: user.oidcIssuer,
+    });
+
+    const { privateBase, publicBase } = basesFromTargetPod(user.targetPod);
+    const privContainer = new URL("journal/", privateBase).href;
+    const pubContainer = new URL("journal/", publicBase).href;
+
+    async function listEntries(containerUrl) {
+      try {
+        const ds = await getSolidDataset(containerUrl, {
+          fetch: sessionNode.fetch,
+        });
+        const urls = getContainedResourceUrlAll(ds) || [];
+        return urls
+          .filter((u) => /\.ttl$/i.test(u) && /\/entry-/.test(u))
+          .sort()
+          .reverse()
+          .map((url) => ({
+            url,
+            id: url.split("/").pop(),
+            date_hint:
+              (url.match(/entry-(\d{4}-\d{2}-\d{2})/) || [])[1] || null,
+          }));
+      } catch {
+        return [];
+      }
+    }
+
+    const [privateEntries, publicEntries] = await Promise.all([
+      listEntries(privContainer),
+      listEntries(pubContainer),
+    ]);
+
+    res.json({
+      private: { containerUrl: privContainer, entries: privateEntries },
+      public: { containerUrl: pubContainer, entries: publicEntries },
+    });
+  } catch (err) {
+    console.error("GET /journal/mine error:", err);
+    res.status(500).send("Could not list your journal entries.");
+  }
+});
+
+// ---------------- Refugee: delete one journal entry (private or public) -------------
+app.post("/journal/delete", async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (!user) return res.status(401).send("Unauthorized");
+
+    const { url } = req.body || {};
+    const resourceUrl = typeof url === "string" ? url.trim() : "";
+    if (!resourceUrl) return res.status(400).send("Missing 'url' in body");
+
+    const sessionNode = new Session();
+    await sessionNode.login({
+      clientId: user.clientId,
+      clientSecret: user.clientSecret,
+      oidcIssuer: user.oidcIssuer,
+    });
+
+    const r = await sessionNode.fetch(resourceUrl, { method: "DELETE" });
+    if (!r.ok) {
+      const msg = await r.text().catch(() => "");
+      console.error("Solid DELETE failed:", r.status, msg);
+      return res.status(502).send("Failed to delete from Solid Pod.");
+    }
+
+    // Best-effort: remove from NGO consent index if present (robust URL match)
+    try {
+      const txt = await fsp.readFile(NGO_CONSENTED_PATH, "utf8");
+      const cleaned = removeFromConsentIndexByUrlSync(txt, resourceUrl);
+      if (cleaned !== txt) {
+        await fsp.writeFile(NGO_CONSENTED_PATH, cleaned, "utf8");
+      }
+    } catch {
+      /* index may not exist yet; ignore */
+    }
+
+    res.send("✅ Entry deleted.");
+  } catch (err) {
+    console.error("POST /journal/delete error:", err);
+    res.status(500).send("Could not delete entry.");
   }
 });
 
@@ -526,7 +700,6 @@ app.get("/journal/_debug", async (req, res) => {
       ensure = "error: " + (e?.message || e);
     }
 
-    // Try a HEAD on the container
     let headStatus = null;
     try {
       const r = await s.fetch(containerUrl, { method: "HEAD" });
@@ -552,7 +725,7 @@ app.get("/journal/_debug", async (req, res) => {
   }
 });
 
-// 🔗 NEW: serve the Similarity UI page
+// Serve the Similarity UI page
 app.get("/similarity", (req, res) => {
   res.sendFile(path.resolve(path.join(__dirname, "public", "similarity.html")));
 });

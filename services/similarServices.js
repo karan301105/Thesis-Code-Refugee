@@ -1,10 +1,6 @@
-// JS twin of similarServices.ts
+// services/similarServices.js
 import { clusterEntries } from "../similarity.js";
 
-/**
- * Normalize your raw entries into the format expected by clustering
- * and run the clustering with optional weights/threshold overrides.
- */
 export function groupSimilarEntries(rawEntries, opts = {}) {
   const entries = (rawEntries || []).map((r) => ({
     id: r.id || r.link || r.url,
@@ -12,16 +8,31 @@ export function groupSimilarEntries(rawEntries, opts = {}) {
     location: r.location,
     counts: { male: r.male, female: r.female, kids: r.kids, total: r.total },
     ransom: r.ransom,
+    eventTypes: Array.isArray(r.eventTypes)
+      ? r.eventTypes
+      : r.eventTypes
+        ? [r.eventTypes]
+        : [],
+    transport: r.transport || null,
+    conditions: Array.isArray(r.conditions)
+      ? r.conditions
+      : r.conditions
+        ? [r.conditions]
+        : [],
   }));
 
+  // Equal weights by default across 7 aspects
   const weights = {
-    date: 0.25,
-    location: 0.35,
-    counts: 0.25,
-    ransom: 0.15,
-    ...(opts.weights || {}),
+    date: 1,
+    location: 1,
+    counts: 1,
+    ransom: 1,
+    eventTypes: 1,
+    transport: 1,
+    conditions: 1,
+    ...(opts?.weights || {}),
   };
 
-  const threshold = opts.threshold ?? 0.7;
+  const threshold = opts?.threshold ?? 0.7; // e.g., need ≥70% of aspects to match
   return clusterEntries(entries, weights, threshold);
 }
